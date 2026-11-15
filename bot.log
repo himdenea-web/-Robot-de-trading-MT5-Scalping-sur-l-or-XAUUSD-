@@ -1,0 +1,136 @@
+2026-10-12 23:47:03,023 [INFO] Robot démarré.
+2026-10-12 23:47:03,032 [INFO] Connecté : compte 10013111743, balance 100000.0 EUR
+2026-10-12 23:53:09,481 [INFO] Robot arrêté manuellement.
+2026-10-12 23:53:25,795 [INFO] Robot démarré.
+2026-10-12 23:53:25,804 [INFO] Connecté : compte 10013111743, balance 100000.0 EUR
+2026-10-13 00:00:05,832 [INFO] Nouvelle journée. Equity de départ : 100000.0
+2026-10-13 05:15:05,820 [INFO] Signal détecté : buy
+2026-10-13 05:15:07,158 [WARNING] Erreur IA : 403 Client Error: Forbidden for url: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent
+2026-10-13 05:15:07,161 [INFO] IA indisponible : trade ignoré (mode prudent).
+2026-10-13 05:40:03,339 [INFO] Robot démarré.
+2026-10-13 05:40:03,347 [INFO] Connecté : compte 10013111743, balance 100000.0 EUR
+2026-10-13 05:45:03,374 [INFO] Nouvelle journée. Equity de départ : 100000.0
+2026-10-13 09:52:48,925 [INFO] Robot arrêté manuellement.
+2026-10-13 09:53:17,390 [INFO] Robot démarré.
+2026-10-13 09:53:17,403 [INFO] Connecté : compte 10013111743, balance 100000.0 EUR
+2026-10-13 10:01:53,724 [INFO] Nouvelle journée. Equity de départ : 100000.0
+2026-10-13 13:49:51,840 [INFO] Robot arrêté manuellement.
+2026-10-13 13:50:06,818 [INFO] Robot démarré.
+2026-10-13 13:50:06,827 [ERROR] Connexion MT5 impossible : (-6, 'Terminal: Authorization failed')
+2026-10-13 13:50:36,838 [ERROR] Connexion MT5 impossible : (-6, 'Terminal: Authorization failed')
+2026-10-13 13:50:45,045 [INFO] Robot arrêté manuellement.
+2026-10-13 13:50:49,008 [INFO] Robot démarré.
+2026-10-13 13:50:49,019 [ERROR] Connexion MT5 impossible : (-6, 'Terminal: Authorization failed')
+2026-10-13 13:51:19,028 [ERROR] Connexion MT5 impossible : (-6, 'Terminal: Authorization failed')
+2026-10-13 13:51:49,043 [ERROR] Connexion MT5 impossible : (-6, 'Terminal: Authorization failed')
+2026-10-13 13:52:19,068 [ERROR] Connexion MT5 impossible : (-6, 'Terminal: Authorization failed')
+2026-10-13 13:52:49,077 [ERROR] Connexion MT5 impossible : (-6, 'Terminal: Authorization failed')
+2026-10-13 13:53:19,097 [ERROR] Connexion MT5 impossible : (-6, 'Terminal: Authorization failed')
+2026-10-13 13:54:07,872 [INFO] Connecté : compte 10013111743, balance 100000.0 EUR
+2026-10-13 13:54:17,768 [INFO] Robot arrêté manuellement.
+2026-10-13 13:54:32,618 [INFO] Robot démarré.
+2026-10-13 13:54:32,626 [INFO] Connecté : compte 10013111743, balance 100000.0 EUR
+2026-10-13 14:00:02,664 [INFO] Nouvelle journée. Equity de départ : 100000.0
+2026-10-13 14:15:42,453 [INFO] Robot arrêté manuellement.
+2026-10-13 18:42:25,127 [INFO] Robot démarré.
+2026-10-13 18:42:29,116 [INFO] Connecté : compte 10013111743, balance 100000.0 EUR
+2026-10-13 18:45:09,147 [INFO] Nouvelle journée. Equity de départ : 100000.0
+2026-10-13 19:01:15,738 [INFO] Robot arrêté manuellement.
+2026-10-13 19:01:19,947 [INFO] Robot démarré.
+2026-10-13 19:01:19,967 [ERROR] Symbole introuvable : xauusd
+2026-10-13 19:01:49,979 [ERROR] Symbole introuvable : xauusd
+2026-10-13 19:02:19,260 [INFO] Robot arrêté manuellement.
+2026-10-13 19:02:21,261 [INFO] Robot démarré.
+2026-10-13 19:02:21,261 [ERROR] Symbole introuvable : xauusd
+2026-10-13 19:02:32,041 [INFO] Robot arrêté manuellement.
+2026-10-13 19:02:33,965 [INFO] Robot démarré.
+2026-10-13 19:02:33,973 [INFO] Connecté : compte 10013111743, balance 100000.0 EUR
+2026-10-13 19:15:04,352 [INFO] Nouvelle journée. Equity de départ : 100000.0
+2026-10-13 19:15:04,354 [INFO] Spread trop large (27 pts) : on attend.
+2026-10-13 20:51:48,549 [INFO] Spread trop large (30 pts) : on attend.
+2026-10-13 21:00:08,588 [INFO] Spread trop large (30 pts) : on attend.
+2026-10-13 21:15:08,666 [INFO] Spread trop large (36 pts) : on attend.
+2026-10-13 21:30:08,763 [INFO] Spread trop large (37 pts) : on attend.
+2026-10-13 21:49:37,538 [INFO] Spread trop large (36 pts) : on attend.
+2026-10-13 22:25:29,339 [INFO] Robot arrêté manuellement.
+2026-10-13 22:25:33,928 [INFO] Robot démarré.
+2026-10-13 22:25:33,940 [INFO] Connecté : compte 10013111743, balance 100000.0 EUR
+2026-10-13 22:58:11,693 [INFO] Robot démarré.
+2026-10-13 22:58:11,702 [INFO] Connecté : compte 10013111743, balance 100000.0 EUR
+2026-10-14 00:00:04,188 [INFO] Nouvelle journée. Equity de départ : 100000.0
+2026-10-14 00:00:04,192 [INFO] Spread trop large (696 pts) : on attend.
+2026-10-14 00:15:04,275 [INFO] Spread trop large (51 pts) : on attend.
+2026-10-14 00:30:04,364 [INFO] Spread trop large (61 pts) : on attend.
+2026-10-14 00:45:04,439 [INFO] Spread trop large (50 pts) : on attend.
+2026-10-14 00:47:13,971 [INFO] Robot arrêté manuellement.
+2026-10-14 00:47:30,431 [INFO] Robot démarré.
+2026-10-14 00:47:30,439 [INFO] Connecté : compte 10013111743, balance 100000.0 EUR
+2026-10-14 01:00:00,490 [INFO] Nouvelle journée. Equity de départ : 100000.0
+2026-10-14 11:58:45,894 [INFO] Robot arrêté manuellement.
+2026-10-14 11:58:52,948 [INFO] Robot démarré.
+2026-10-14 11:58:52,955 [INFO] Connecté : compte 10013111743, balance 100000.0 EUR
+2026-10-14 12:00:02,962 [INFO] Nouvelle journée. Equity de départ : 100000.0
+2026-10-14 14:02:05,628 [INFO] Robot arrêté manuellement.
+2026-10-14 14:02:29,404 [INFO] Robot démarré.
+2026-10-14 14:02:29,411 [INFO] Connecté : compte 10013111743, balance 100000.0 EUR
+2026-10-14 14:04:40,383 [INFO] Robot arrêté manuellement.
+2026-10-14 14:05:39,448 [INFO] Robot démarré.
+2026-10-14 14:05:39,459 [INFO] Connecté : compte 10013111743, balance 100000.0 EUR
+2026-10-14 14:15:09,502 [INFO] Nouvelle journée. Equity de départ : 100000.0
+2026-10-14 14:30:09,591 [INFO] Spread trop large (147 pts) : on attend.
+2026-10-14 16:05:22,827 [INFO] Robot arrêté manuellement.
+2026-10-14 16:05:32,323 [INFO] Robot démarré.
+2026-10-14 16:05:32,330 [INFO] Connecté : compte 10013111743, balance 100000.0 EUR
+2026-10-14 16:15:02,382 [INFO] Nouvelle journée. Equity de départ : 100000.0
+2026-10-14 21:50:32,796 [INFO] Robot arrêté manuellement.
+2026-10-14 21:50:52,885 [INFO] Robot démarré.
+2026-10-14 21:50:52,892 [INFO] Connecté : compte 10013111743, balance 100000.0 EUR
+2026-10-15 00:00:01,278 [INFO] Nouvelle journée. Equity de départ : 100000.0
+2026-10-15 00:00:01,278 [INFO] Spread trop large (799 pts) : on attend.
+2026-10-15 01:08:31,238 [INFO] Robot arrêté manuellement.
+2026-10-15 01:09:57,489 [INFO] Robot démarré.
+2026-10-15 01:09:57,498 [INFO] Connecté : compte 10013111743, balance 100000.0 EUR
+2026-10-15 01:15:07,525 [INFO] Nouvelle journée. Equity de départ : 100000.0
+2026-10-15 02:41:36,273 [INFO] Robot arrêté manuellement.
+2026-10-15 02:41:39,804 [INFO] 🤖 **Robot démarré avec succès !** Prêt à analyser les bougies M15.
+2026-10-15 02:41:39,812 [INFO] Connecté : compte 10013111743, balance 100000.0 EUR
+2026-10-15 02:44:59,824 [INFO] Nouvelle journée. Equity de départ : 100000.0
+2026-10-15 02:45:20,892 [INFO] ⚠️ **Robot arrêté manuellement.**
+2026-10-15 02:45:31,306 [INFO] 🤖 **Robot démarré avec succès !** Prêt à analyser les bougies M15.
+2026-10-15 02:45:31,756 [INFO] Connecté : compte 10013111743, balance 100000.0 EUR
+2026-10-15 03:00:01,816 [INFO] Nouvelle journée. Equity de départ : 100000.0
+2026-10-15 03:01:31,825 [INFO] 🤖 **Robot démarré avec succès !** Prêt à analyser les bougies M15.
+2026-10-15 03:01:32,353 [INFO] Connecté : compte 10013111743, balance 100000.0 EUR
+2026-10-15 03:15:02,409 [INFO] Nouvelle journée. Equity de départ : 100000.0
+2026-10-15 16:33:00,082 [INFO] ⚠️ **Robot arrêté manuellement.**
+2026-10-15 16:33:10,751 [INFO] 🤖 **Robot démarré avec succès !** Prêt à analyser les bougies M15.
+2026-10-15 16:33:11,200 [INFO] Connecté : compte 10013111743, balance 100000.0 EUR
+2026-10-15 19:20:36,085 [INFO] ⚠️ **Robot arrêté manuellement.**
+2026-10-15 19:20:42,527 [INFO] 🤖 **Robot démarré avec succès !** Prêt à analyser les bougies M15.
+2026-10-15 19:20:43,216 [INFO] Connecté : compte 10013111743, balance 100000.0 EUR
+2026-10-15 19:30:03,258 [INFO] Nouvelle journée. Equity de départ : 100000.0
+2026-10-15 20:33:39,742 [INFO] ⚠️ **Robot arrêté manuellement.**
+2026-10-15 20:33:40,641 [WARNING] Telegram KO : ('Connection aborted.', ConnectionResetError(10054, 'Une connexion existante a dû être fermée par l’hôte distant', None, 10054, None))
+2026-10-15 20:35:35,882 [INFO] 🤖 **Robot démarré avec succès !** Prêt à analyser les bougies M15.
+2026-10-15 20:35:37,010 [WARNING] Telegram KO : ('Connection aborted.', ConnectionResetError(10054, 'Une connexion existante a dû être fermée par l’hôte distant', None, 10054, None))
+2026-10-15 20:35:37,028 [INFO] Connecté : compte 10013111743, balance 100000.0 EUR
+2026-10-15 20:45:07,072 [INFO] Nouvelle journée. Equity de départ : 100000.0
+2026-10-15 21:30:06,073 [INFO] ⚠️ **Robot arrêté manuellement.**
+2026-10-15 21:30:08,576 [INFO] 🤖 **Robot démarré avec succès !** Prêt à analyser les bougies M15.
+2026-10-15 21:30:09,262 [ERROR] Connexion MT5 impossible : (-6, 'Terminal: Authorization failed')
+2026-10-15 21:30:39,264 [ERROR] Connexion MT5 impossible : (-6, 'Terminal: Authorization failed')
+2026-10-15 21:31:09,268 [ERROR] Connexion MT5 impossible : (-6, 'Terminal: Authorization failed')
+2026-10-15 21:31:32,661 [INFO] ⚠️ **Robot arrêté manuellement.**
+2026-10-15 21:31:43,652 [INFO] 🤖 **Robot démarré avec succès !** Prêt à analyser les bougies M15.
+2026-10-15 21:31:44,056 [INFO] Connecté : compte 10013111743, balance 100000.0 EUR
+2026-10-15 21:45:04,115 [INFO] Nouvelle journée. Equity de départ : 100000.0
+2026-10-15 23:00:56,461 [INFO] Spread trop large (70 pts) : on attend.
+2026-10-16 00:00:06,729 [INFO] Nouvelle journée. Equity de départ : 100000.0
+2026-10-16 01:32:00,566 [INFO] ⚠️ **Robot arrêté manuellement.**
+2026-10-16 01:32:04,662 [INFO] 🤖 **Robot démarré avec succès !** Prêt à analyser les bougies M15.
+2026-10-16 01:32:05,056 [INFO] Connecté : compte 10013111743, balance 100000.0 EUR
+2026-10-16 01:37:00,351 [INFO] ⚠️ **Robot arrêté manuellement.**
+2026-10-16 01:37:07,694 [INFO] 🤖 **Robot démarré avec succès !** Prêt à analyser les bougies M15.
+2026-10-16 01:37:08,497 [INFO] Connecté : compte 10013111743, balance 100000.0 EUR
+2026-10-16 01:45:08,530 [INFO] Nouvelle journée. Equity de départ : 100000.0
+2026-10-16 03:35:57,685 [INFO] ⚠️ **Robot arrêté manuellement.**
