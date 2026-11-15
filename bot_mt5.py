@@ -1,14 +1,4 @@
-# -*- coding: utf-8 -*-
-"""
-bot_mt5.py - Robot de scalping sur l'or (XAUUSD) pour MetaTrader 5
 
-Stratégie : tendance (EMA 20 / EMA 50) + repli du RSI, sorties basées sur l'ATR.
-Garde-fous : perte max par jour en argent (180), 2 trades max par jour,
-objectif hebdomadaire (600) après lequel le robot arrête de trader,
-risque total plafonné, filtre de spread, refus de tourner sur un compte réel.
-
-Chaque nouvelle bougie, le robot AFFICHE pourquoi il trade ou non.
-"""
 import os
 import csv
 import math
@@ -22,9 +12,7 @@ import pandas as pd
 import requests
 
 
-# =====================================================================
-# 0. Lecture du fichier .env (les clés secrètes ne sont PAS dans le code)
-# =====================================================================
+
 def load_env(path=".env"):
     if not os.path.isfile(path):
         return
@@ -39,60 +27,56 @@ def load_env(path=".env"):
 
 load_env()
 
-# =====================================================================
-# 1. CONFIGURATION
-# =====================================================================
-SYMBOL = os.getenv("SYMBOL", "XAUUSD")   # le robot cherche aussi XAUUSDm, XAUUSD.a...
+
+SYMBOL = os.getenv("SYMBOL", "XAUUSD")   
 TIMEFRAME = mt5.TIMEFRAME_M5
 MAGIC_NUMBER = 123456
-DEVIATION = 30                            # glissement max accepté (points)
+DEVIATION = 30                            
 
-# --- Indicateurs
+
 EMA_FAST = 20
 EMA_SLOW = 50
 RSI_PERIOD = 14
 ATR_PERIOD = 14
-RSI_BUY_LEVEL = 45        # achat quand le RSI remonte au-dessus de ce niveau (tendance haussière)
-RSI_SELL_LEVEL = 55       # vente quand le RSI redescend sous ce niveau (tendance baissière)
-MIN_TREND_ATR = 0.2       # écart minimal entre les 2 EMA (en multiples d'ATR)
+RSI_BUY_LEVEL = 45        
+RSI_SELL_LEVEL = 55       
+MIN_TREND_ATR = 0.2       
 
-# --- Sorties (en multiples d'ATR)
-SL_ATR = 1.0   # stop loss  = 1.0 x ATR
-TP_ATR = 1.5   # take profit = 1.5 x ATR (gain visé > perte possible)
 
-# --- Gestion du risque
-RISK_PERCENT = 0.5              # risque par trade (% de l'equity)
-MAX_POSITIONS = 2               # max 2 positions ouvertes en même temps
-MAX_TRADES_PER_DAY = 2          # max 2 trades ouverts par jour
-MAX_DAILY_LOSS_MONEY = 180.0    # perte max par jour (en devise du compte)
-WEEKLY_PROFIT_TARGET = 600.0    # objectif : on arrête de trader la semaine une fois atteint
-MAX_TOTAL_RISK_PERCENT = 2.0    # risque cumulé max de toutes les positions (% equity)
-CLOSE_ALL_ON_LIMIT = True       # ferme tout quand la perte journalière max est atteinte
-MAX_SPREAD_POINTS = 50          # sur l'or, 1 point = 0.01 $ en général (50 = 0.50 $)
+SL_ATR = 1.0   
+TP_ATR = 1.5   
 
-# Petit compte : le lot minimum (0.01) peut dépasser le risque voulu.
-FORCE_MIN_LOT = True            # accepte le lot minimum si le risque reste raisonnable...
-MAX_OVERRISK_FACTOR = 3.0       # ...c'est-à-dire <= 3 x le risque voulu
-MAX_LOTS = 2.0                  # sécurité : jamais plus de 2 lots, quoi qu'il arrive
+
+RISK_PERCENT = 0.5              
+MAX_POSITIONS = 2               
+MAX_TRADES_PER_DAY = 2          
+MAX_DAILY_LOSS_MONEY = 180.0    
+WEEKLY_PROFIT_TARGET = 600.0    
+MAX_TOTAL_RISK_PERCENT = 2.0    
+CLOSE_ALL_ON_LIMIT = True      
+MAX_SPREAD_POINTS = 50          
+
+FORCE_MIN_LOT = True           
+MAX_OVERRISK_FACTOR = 3.0       
+MAX_LOTS = 2.0                  
 
 # --- Sécurité
 REQUIRE_DEMO = True             # refuse de tourner sur un compte réel
-TEST_TRADE_ON_START = False     # True = ouvre UN trade test (0.01 lot) au démarrage (démo seulement)
+TEST_TRADE_ON_START = False     
 
 # --- Fonctionnement
-CHECK_SECONDS = 5               # fréquence de vérification
-STALE_TICK_SECONDS = 120        # aucun nouveau prix depuis 2 min => marché considéré fermé
-IDLE_PRINT_SECONDS = 300        # message "toujours en vie" toutes les 5 min
+CHECK_SECONDS = 5               
+STALE_TICK_SECONDS = 120        
+IDLE_PRINT_SECONDS = 300        
 
-# --- Telegram (dans le fichier .env)
+
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 
-# --- Filtre IA Gemini (optionnel)
 USE_GEMINI = True
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = "gemini-2.5-flash"
-GEMINI_FAIL_OPEN = True         # si Gemini plante : True = on trade quand même, False = on bloque
+GEMINI_FAIL_OPEN = True         
 
 CSV_FILE = "journal_de_trading.csv"
 
@@ -106,9 +90,7 @@ STATE = {
 }
 
 
-# =====================================================================
-# 2. OUTILS
-# =====================================================================
+
 def log(msg):
     print(f"[{dt.datetime.now():%H:%M:%S}] {msg}", flush=True)
 
@@ -145,9 +127,7 @@ def resolve_symbol(base):
     return None
 
 
-# =====================================================================
-# 3. INDICATEURS ET SIGNAL
-# =====================================================================
+
 def compute_indicators(df):
     c = df["close"]
     df["ema_fast"] = c.ewm(span=EMA_FAST, adjust=False).mean()
@@ -185,9 +165,7 @@ def get_signal(last, prev):
     return None, "pas de tendance claire (prix entre les deux EMA)"
 
 
-# =====================================================================
-# 4. RISQUE, LOTS, LIMITES JOURNALIÈRES ET HEBDOMADAIRES
-# =====================================================================
+
 def my_positions():
     pos = mt5.positions_get(symbol=SYMBOL)
     return [p for p in (pos or []) if p.magic == MAGIC_NUMBER]
