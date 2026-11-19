@@ -35,8 +35,13 @@ def load_m1():
             frames.append(pd.read_csv(io.BytesIO(zf.read(name)), sep=";", header=None,
                                       names=["t", "open", "high", "low", "close", "v"]))
     df = pd.concat(frames, ignore_index=True)
-    # HistData timestamps are EST without daylight saving (fixed UTC-5)
-    df["time"] = pd.to_datetime(df["t"], format="%Y%m%d %H%M%S") + pd.Timedelta(hours=5)
+    # HistData documents its stamps as "EST without DST", but the data says otherwise: the
+    # 08:30 New York data-release spike sits at 08:30 in both winter and summer, and the daily
+    # reopen sits at 18:00. So the stamps are New York local time (with DST). Convert to UTC.
+    local = pd.to_datetime(df["t"], format="%Y%m%d %H%M%S")
+    df["time"] = (local.dt.tz_localize("America/New_York", ambiguous="NaT", nonexistent="NaT")
+                       .dt.tz_convert("UTC").dt.tz_localize(None))
+    df = df.dropna(subset=["time"])
     df = (df.drop(columns=["t", "v"]).drop_duplicates("time").sort_values("time")
             .reset_index(drop=True))
     df.to_parquet(CACHE)

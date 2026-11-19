@@ -13,7 +13,7 @@ EMA50 and EMA gap >= 0.2 ATR, entry when RSI(14) crosses back above 45 (buy) or 
 closed bar, SL = 1.0 ATR, TP = 1.5 ATR, plus the bot's money rules (180 max daily loss, 2 trades/day,
 600 weekly target, 2 positions max).
 
-Data: HistData.com XAUUSD M1 bid quotes, Jan 2022 to Nov 2026 (about 4.9 years, 1.68M M1 bars),
+Data: HistData.com XAUUSD M1 bid quotes, Jan 2022 to Nov 2026 (about 4.9 years, 1.68M M1 bars, New York local stamps converted to UTC),
 resampled to M5. Exits are resolved on the M1 bars so the order of SL/TP hits inside a 5 minute candle
 is known, not guessed.
 

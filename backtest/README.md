@@ -15,4 +15,4 @@ jupyter nbconvert --to notebook --execute --inplace indicator_review_backtest.ip
 
 - `engine.py`: signal (same formulas as `bot_mt5.py`, checked bar by bar in the notebook),
   M1-resolved exits, the bot's money rules, metrics (PSR, Deflated Sharpe).
-- Prices are HistData bid quotes in EST without DST, converted to UTC. Spread is modelled at 0.30 USD.
+- Prices are HistData bid quotes. Their stamps are New York local time with DST (checked against the 08:30 data-release spike and the 18:00 reopen), converted to UTC. Spread is modelled at 0.30 USD.
