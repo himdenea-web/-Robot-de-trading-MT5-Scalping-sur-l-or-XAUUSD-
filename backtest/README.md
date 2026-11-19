@@ -16,3 +16,11 @@ jupyter nbconvert --to notebook --execute --inplace indicator_review_backtest.ip
 - `engine.py`: signal (same formulas as `bot_mt5.py`, checked bar by bar in the notebook),
   M1-resolved exits, the bot's money rules, metrics (PSR, Deflated Sharpe).
 - Prices are HistData bid quotes. Their stamps are New York local time with DST (checked against the 08:30 data-release spike and the 18:00 reopen), converted to UTC. Spread is modelled at 0.30 USD.
+
+Framework backtest (the real `goldbot` engine with funded-account rules):
+
+- `framework_backtest.ipynb` (built by `build_framework_notebook.py`): parity with the research
+  engine, funded-account replay, first-week pass/fail odds, Monte Carlo, cost stress.
+- `orb.py`: opening range breakout research engine used to choose the strategy settings.
+- `llm_replay.py`: evaluates the LLM committee on a sample of historical setups with your
+  provider and key (billed; answers are cached).

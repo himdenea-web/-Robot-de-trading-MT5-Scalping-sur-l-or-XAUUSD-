@@ -1,0 +1,18 @@
+# core
+pandas>=2.0
+numpy>=1.24
+requests>=2.31
+MetaTrader5>=5.0.45 ; sys_platform == "win32"
+tzdata ; sys_platform == "win32"
+
+# LLM committee (only the provider you select is needed)
+anthropic>=1.0
+openai>=1.0
+
+# backtests and tests
+pyarrow>=14
+matplotlib>=3.7
+scipy>=1.10
+nbformat>=5.9
+nbconvert>=7.0
+pytest>=8.0

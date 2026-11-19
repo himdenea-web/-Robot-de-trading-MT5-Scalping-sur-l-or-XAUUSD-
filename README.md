@@ -1,5 +1,5 @@
 # -Robot-de-trading-MT5-Scalping-sur-l-or-XAUUSD-
-Robot de trading automatique en Python pour MetaTrader 5, spécialisé sur l’or (XAUUSD). Stratégie de tendance EMA 20/50 + RSI, stop loss et take profit basés sur l’ATR, gestion du risque (perte max par jour, 2 trades/jour, objectif hebdo), alertes Telegram et filtre IA Gemini optionnel. Compte démo uniquement. Projet éducatif.
+Robot de trading automatique en Python pour MetaTrader 5, spécialisé sur l’or (XAUUSD). Stratégie de tendance EMA 20/50 + RSI, stop loss et take profit basés sur l’ATR, gestion du risque (perte max par jour, 2 trades/jour, objectif hebdo), alertes Telegram. Compte démo uniquement. Projet éducatif.
 ✨ Fonctionnalités
 Stratégie de tendance : EMA 20 / EMA 50 + repli du RSI (14), sur bougies M5 clôturées.
 Sorties basées sur l'ATR : stop loss = 1,0 × ATR, take profit = 1,5 × ATR.
@@ -12,7 +12,6 @@ risque total plafonné, filtre de spread, lot maximum ;
 refus de tourner sur un compte réel (REQUIRE_DEMO = True).
 Transparence : à chaque nouvelle bougie, le robot affiche pourquoi il trade ou non.
 Notifications Telegram (optionnel).
-Filtre IA Gemini (optionnel) : demande un avis OUI/NON avant chaque trade.
 Journal CSV de tous les trades (journal_de_trading.csv).
 📋 Prérequis
 Windows (la bibliothèque MetaTrader5 de Python fonctionne sous Windows)
@@ -32,9 +31,8 @@ env
 SYMBOL=XAUUSD
 TELEGRAM_TOKEN=ton_token_telegram
 TELEGRAM_CHAT_ID=ton_chat_id
-GEMINI_API_KEY=ta_cle_gemini
 
-Telegram et Gemini sont facultatifs. Sans clé Gemini, mets USE_GEMINI = False dans bot_mt5.py.
+Telegram est facultatif.
 
 Ajuste les paramètres en haut de bot_mt5.py :
 Paramètre	Rôle	Valeur par défaut
@@ -73,3 +71,22 @@ Ces scripts doivent lire leurs clés depuis le fichier .env, jamais directement 
 ⚠️ Avertissement
 
 Ce projet est fourni à des fins d'apprentissage. Les performances passées ne préjugent pas des performances futures. Teste toujours sur un compte démo et n'utilise jamais d'argent que tu ne peux pas te permettre de perdre.
+
+## goldbot : nouveau framework (stratégie interchangeable)
+
+`goldbot/` remplace progressivement `bot_mt5.py`. Le même moteur tourne en réel (MT5) et en backtest (barres M1 simulées), donc le backtest teste exactement le code qui trade.
+
+- **Stratégie interchangeable** : `goldbot/strategies/` (premier plug-in : Opening Range Breakout). Une nouvelle stratégie = une classe `Strategy` + une ligne dans le registre.
+- **Règles du compte financé** codées en dur : perte max par jour, perte max la première semaine, arrêt à l'objectif hebdomadaire, 2 trades par jour, risque fixe en USD. Les limites comptent tout le compte (pire cas : réalisé + risque ouvert + nouveau trade + marge).
+- **Mode alerte** (par défaut) : le robot envoie le setup sur Telegram sans passer d'ordre. **Mode trade** : il place les ordres.
+- **Comité IA multi-agents (optionnel)** : 3 analystes (tendance, volatilité, risque) + un président, tous sur **un seul fournisseur** choisi dans la config (`GB_LLM_PROVIDER` + `GB_LLM_API_KEY` + `GB_LLM_MODEL`) : `anthropic`, `openai`, ou `openai_compatible` (OpenRouter, Groq, Ollama...). Le comité peut seulement refuser un setup, jamais en créer ou modifier un.
+
+```bash
+copy .env.example .env          # puis remplir
+python -m goldbot --check       # connexion, réglages, état du compte
+python -m goldbot               # mode alerte
+python -m goldbot --mode trade --llm on
+python -m pytest tests          # tests
+```
+
+Backtest du framework : `backtest/framework_backtest.ipynb`. Résultats de recherche : `backtest/indicator_review_backtest.ipynb`.
