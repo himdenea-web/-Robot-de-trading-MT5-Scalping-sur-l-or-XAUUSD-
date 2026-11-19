@@ -73,11 +73,6 @@ IDLE_PRINT_SECONDS = 300
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 
-USE_GEMINI = True
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL = "gemini-2.5-flash"
-GEMINI_FAIL_OPEN = True         
-
 CSV_FILE = "journal_de_trading.csv"
 
 STATE = {
@@ -374,28 +369,6 @@ def close_all_positions(info):
 
 
 # =====================================================================
-# 6. FILTRE GEMINI (optionnel)
-# =====================================================================
-def gemini_ok(signal, last):
-    if not USE_GEMINI:
-        return True, "Gemini désactivé"
-    if not GEMINI_API_KEY:
-        return GEMINI_FAIL_OPEN, "Gemini activé mais clé absente"
-    try:
-        from google import genai
-        client = genai.Client(api_key=GEMINI_API_KEY)
-        prompt = (f"Scalping {SYMBOL}. Signal proposé : {signal}. Prix {last.close:.2f}, "
-                  f"EMA20 {last.ema_fast:.2f}, EMA50 {last.ema_slow:.2f}, RSI {last.rsi:.1f}, "
-                  f"ATR {last.atr:.2f}. Réponds uniquement par OUI ou NON : "
-                  f"ce trade est-il raisonnable ?")
-        resp = client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
-        txt = (resp.text or "").strip().upper()
-        return txt.startswith("OUI"), f"Gemini : {txt[:40]}"
-    except Exception as e:
-        return GEMINI_FAIL_OPEN, f"Gemini erreur ({e})"
-
-
-# =====================================================================
 # 7. LOGIQUE PAR BOUGIE
 # =====================================================================
 def market_is_open():
@@ -465,12 +438,6 @@ def on_new_bar(closed, info):
     wanted = mt5.POSITION_TYPE_BUY if signal == "BUY" else mt5.POSITION_TYPE_SELL
     if any(p.type != wanted for p in positions):
         log(f"   ⛔ Signal {signal} ignoré : une position dans l'autre sens est ouverte")
-        return
-
-    ok_ai, ai_msg = gemini_ok(signal, last)
-    log(f"   {ai_msg}")
-    if not ok_ai:
-        log(f"   ⛔ Signal {signal} refusé par Gemini")
         return
 
     ok, msg = place_order(signal, last.atr, info)
