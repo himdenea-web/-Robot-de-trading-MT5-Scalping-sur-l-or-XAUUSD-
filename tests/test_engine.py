@@ -32,7 +32,8 @@ def synthetic_m1(days=40, seed=3):
 def base_cfg(**risk):
     return Config(strategy_params=dict(sessions=("ny_comex",), range_min=60, window_min=120,
                                        stop="mid", target_r=3.0, trend_filter=True),
-                  risk=RiskConfig(**{"risk_per_trade_usd": 90, "volume_max": 5.0, **risk}))
+                  risk=RiskConfig(**{"risk_per_trade_usd": 90, "volume_max": 5.0, "max_total_loss": 0,
+                                     "profit_target": 0, **risk}))
 
 
 def test_one_trade_per_session_and_limits_hold():
@@ -70,7 +71,7 @@ def test_parity_with_research_engine_2024():
     sys.path.insert(0, os.path.join(ROOT, "backtest"))
     import orb as O
     m1 = pd.read_parquet(CACHE)
-    cfg = base_cfg(daily_loss_limit=1e9, first_week_loss_limit=1e9, weekly_profit_target=1e9)
+    cfg = base_cfg(daily_loss_limit=1e9, max_open_risk=0)
     tr = run_backtest(cfg, m1, start="2024-01-01", end="2025-01-01")["trades"]
     ref = O.run_orb(O.M1(m1), O.OrbParams(session="ny_comex", range_min=60, stop="mid",
                                           target_r=3.0, trend_filter=True))
@@ -82,3 +83,67 @@ def test_parity_with_research_engine_2024():
     assert (np.where(j.side == "BUY", 1, -1) == j.dir).all()
     assert np.allclose(j.entry, j.entry_ref)
     assert j.R.corr(j.R_ref) > 0.97
+
+
+def test_static_floor_and_profit_target_in_backtest():
+    m1 = synthetic_m1(days=80)
+    res = run_backtest(base_cfg(max_total_loss=400, profit_target=150), m1)
+    tr = res["trades"].sort_values("entry_time")
+    eq = tr["pnl"].cumsum().to_numpy()
+    assert (eq > -400).all()                                  # floor never broken
+    hit = np.flatnonzero(eq >= 150)
+    if len(hit):
+        assert hit[0] == len(eq) - 1                          # nothing opened after the target
+
+
+def _ny_minutes(s):
+    t = pd.to_datetime(s).dt.tz_localize("UTC").dt.tz_convert("America/New_York")
+    return t.dt.hour * 60 + t.dt.minute
+
+
+def test_news_blackout_and_close_winners():
+    from goldbot.config import NewsConfig
+    m1 = synthetic_m1(days=60)
+    cfg = base_cfg()
+    cfg.news = NewsConfig(source="fixed:10:00", before_min=6, after_min=5, close_winners=True)
+    res = run_backtest(cfg, m1)
+    tr = res["trades"]
+    news_exits = tr[tr.reason == "news"]
+    assert len(news_exits) > 0
+    assert (news_exits.pnl > 0).all()
+    assert (_ny_minutes(news_exits.exit_time) < 600 - 5).all()   # banked before the window
+    for d in res["engine"].decisions:                              # no setup accepted in a blackout
+        if d["stage"] == "news":
+            m = _ny_minutes(pd.Series([d["time"]])).iloc[0]
+            assert 600 - 6 <= m <= 600 + 5
+
+
+def test_news_calendar_sources(tmp_path):
+    from goldbot.config import NewsConfig
+    from goldbot.news import NewsCalendar
+    cal = NewsCalendar(NewsConfig(source="fixed:08:30,10:00"))
+    ev = cal.events_between(pd.Timestamp("2026-07-15 00:00"), pd.Timestamp("2026-07-16 00:00"))
+    assert [t for t, _ in ev] == [pd.Timestamp("2026-07-15 12:30"), pd.Timestamp("2026-07-15 14:00")]
+    assert cal.blackout(pd.Timestamp("2026-07-15 13:56")) is not None   # 4 min before 10:00 NY
+    assert cal.blackout(pd.Timestamp("2026-07-15 14:06")) is None
+    rows = [{"title": "CPI m/m", "country": "USD", "impact": "High", "date": "2026-11-12T08:30:00-05:00"},
+            {"title": "ECB", "country": "EUR", "impact": "High", "date": "2026-11-12T08:15:00-05:00"},
+            {"title": "Retail", "country": "USD", "impact": "Medium", "date": "2026-11-12T10:00:00-05:00"}]
+    ff = NewsCalendar(NewsConfig(source="forexfactory"), fetch=lambda: rows, log=lambda m: None)
+    ff.refresh(force=True)
+    assert ff.events_between("2026-11-12", "2026-11-13") == [(pd.Timestamp("2026-11-12 13:30"), "CPI m/m")]
+    f = tmp_path / "news.csv"
+    f.write_text("time,title\n2026-11-12 08:30,CPI\n")
+    fc = NewsCalendar(NewsConfig(source="file", file=str(f)), log=lambda m: None)
+    fc.refresh(force=True)
+    assert fc.events_between("2026-11-12", "2026-11-13")[0][0] == pd.Timestamp("2026-11-12 13:30")
+
+
+def test_env_inline_comments(tmp_path, monkeypatch):
+    from goldbot.config import load_env
+    f = tmp_path / ".env"
+    f.write_text("GB_TEST_MODE=alert      # a comment\nGB_TEST_Q='a # b'\n")
+    monkeypatch.delenv("GB_TEST_MODE", raising=False)
+    monkeypatch.delenv("GB_TEST_Q", raising=False)
+    load_env(str(f))
+    assert os.environ["GB_TEST_MODE"] == "alert" and os.environ["GB_TEST_Q"] == "a # b"

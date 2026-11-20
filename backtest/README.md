@@ -31,3 +31,9 @@ Strategy search (7,488 variants with luck controls):
   numba simulator on 1-minute exits, random-direction and no-cost controls, Reality Check / SPA,
   weekly funded-challenge simulator.
 - `strategy_search.ipynb` (built by `build_search_notebook.py`): results and charts. Runs in about 2 minutes.
+
+Two-phase funded challenge (5,000 USD, +400 then +200, floor 4,600, daily 200, no time limit):
+
+- `challenge.py`: numba simulator of the two phases with the bot's sizing (shrink to the room left).
+- `funded_challenge.ipynb` (built by `build_challenge_notebook.py`): pass odds by risk per trade,
+  history replay and Monte Carlo by edge, effect of the 40% news rule.

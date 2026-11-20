@@ -77,7 +77,9 @@ Ce projet est fourni à des fins d'apprentissage. Les performances passées ne p
 `goldbot/` remplace progressivement `bot_mt5.py`. Le même moteur tourne en réel (MT5) et en backtest (barres M1 simulées), donc le backtest teste exactement le code qui trade.
 
 - **Stratégie interchangeable** : `goldbot/strategies/` (premier plug-in : Opening Range Breakout). Une nouvelle stratégie = une classe `Strategy` + une ligne dans le registre.
-- **Règles du compte financé** codées en dur : perte max par jour, perte max la première semaine, arrêt à l'objectif hebdomadaire, 2 trades par jour, risque fixe en USD. Les limites comptent tout le compte (pire cas : réalisé + risque ouvert + nouveau trade + marge).
+- **Règles du compte financé** (par défaut : compte 5 000 $ en deux phases, sans limite de temps) : objectif +400 $ en phase 1 puis +200 $ en phase 2 (`GB_PROFIT_TARGET`), perte max 200 $ par jour, plancher statique à 4 600 $ (`GB_MAX_TOTAL_LOSS=400`), exposition cumulée max 150 $ (`GB_MAX_OPEN_RISK`), Stop Loss sur chaque ordre, 2 trades par jour. Chaque limite est vérifiée au pire cas (réalisé + risque ouvert + nouveau trade + marge) sur tout le compte ; la taille est réduite à la marge restante, et le trade est sauté s'il reste moins de 20 $.
+- **Annonces majeures** : pas de nouveau setup de 6 minutes avant à 5 minutes après une annonce à fort impact (calendrier ForexFactory, fichier CSV ou heures fixes), car les gains réalisés dans les 5 minutes autour d'une annonce ne comptent qu'à 40 % en phase financée.
+- **Attention** : les trades identiques entre utilisateurs et le copy trading sont interdits. Ne pas faire tourner ce robot sur les comptes financés de plusieurs personnes.
 - **Mode alerte** (par défaut) : le robot envoie le setup sur Telegram sans passer d'ordre. **Mode trade** : il place les ordres.
 - **Comité IA multi-agents (optionnel)** : 3 analystes (tendance, volatilité, risque) + un président, tous sur **un seul fournisseur** choisi dans la config (`GB_LLM_PROVIDER` + `GB_LLM_API_KEY` + `GB_LLM_MODEL`) : `anthropic`, `openai`, ou `openai_compatible` (OpenRouter, Groq, Ollama...). Le comité peut seulement refuser un setup, jamais en créer ou modifier un.
 
@@ -89,4 +91,4 @@ python -m goldbot --mode trade --llm on
 python -m pytest tests          # tests
 ```
 
-Backtest du framework : `backtest/framework_backtest.ipynb`. Résultats de recherche : `backtest/indicator_review_backtest.ipynb`.
+Backtest du framework : `backtest/framework_backtest.ipynb`. Chances de réussir le challenge en deux phases : `backtest/funded_challenge.ipynb`. Recherche sur 7 488 stratégies : `backtest/strategy_search.ipynb`. Revue de l'indicateur d'origine : `backtest/indicator_review_backtest.ipynb`.

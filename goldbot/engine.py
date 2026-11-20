@@ -7,12 +7,13 @@ import pandas as pd
 
 from goldbot.config import Config
 from goldbot.market import trading_day, trading_week
+from goldbot.news import NewsCalendar
 from goldbot.risk import AccountState, FundedRiskManager
 
 
 class Engine:
     def __init__(self, cfg: Config, strategy, market, broker, committee=None,
-                 notifier=None, journal=None):
+                 notifier=None, journal=None, news=None):
         self.cfg = cfg
         self.strategy = strategy
         self.market = market
@@ -24,6 +25,7 @@ class Engine:
         self.alerts: list[dict] = []          # alert mode: what would have been placed
         self.decisions: list[dict] = []
         self._known_positions: set[str] = set()
+        self.news = news if news is not None else NewsCalendar(cfg.news, log=lambda m: self._log("news", msg=m))
 
     # ------------------------------------------------------------------ helpers
     def _day(self, ts):
@@ -63,7 +65,9 @@ class Engine:
         st.external_unprotected = ext_naked
         # a pending OCO group reserves one trade slot; a filled group uses one
         st.trades_today = len(self._groups_entered_on(today, lookback_start) | set(groups_pending))
-        st.equity = self.broker.account().get("equity", 0.0)
+        acc = self.broker.account()
+        st.equity = acc.get("equity", 0.0)
+        st.balance = acc.get("balance")
         return st
 
     def _groups_entered_on(self, day, since) -> set:
@@ -86,7 +90,32 @@ class Engine:
         for group, legs in by_group.items():
             self._handle_group(now, group, legs)
 
+    def _close_winners_before_news(self, now, positions):
+        """Gains realized around a major release may count only partly: bank them before."""
+        if not (self.news.enabled and self.cfg.news.close_winners and positions):
+            return positions
+        ev = self.news.next_within(now, 1.0)
+        if ev is None or self.news.blackout(now + pd.Timedelta(minutes=1)) is None:
+            return positions
+        if ev[0] - now <= pd.Timedelta(minutes=self.cfg.news.rule_window_min):
+            return positions                   # already inside the firm's window
+        bid = self.market.last_price()
+        ask = bid + self.market.spread()
+        kept = []
+        for p in positions:
+            exit_px = bid if p.setup.direction > 0 else ask
+            if (exit_px - p.entry_price) * p.setup.direction > 0:
+                f = self.broker.close(p, "news")
+                if f is not None:
+                    self._log("exit", group=p.setup.group, side=p.setup.side, price=f.exit_price,
+                              pnl=f.pnl, r=f.r, reason=f"news: {ev[1]} at {ev[0]:%H:%M} UTC")
+                    self._notify(f"Closed {p.setup.side} in profit ({f.pnl:+.2f}) before {ev[1]}")
+                    continue
+            kept.append(p)
+        return kept
+
     def _manage(self, now):
+        self.news.refresh()
         positions = self.broker.positions()
         for p in positions:
             if p.id not in self._known_positions:
@@ -113,6 +142,7 @@ class Engine:
                 if reason:
                     self.broker.cancel(o)
                     self._log("cancel", group=s.group, side=s.side, reason=reason)
+        positions = self._close_winners_before_news(now, self.broker.positions())
         for p in positions:
             if now >= p.setup.exit_by:
                 f = self.broker.close(p, "time")
@@ -125,6 +155,13 @@ class Engine:
         spread = self.market.spread()
         if spread > self.cfg.max_spread:
             self._log("skip", group=group, reason=f"spread {spread:.2f} > {self.cfg.max_spread}")
+            return
+        ev = self.news.blackout(now) if self.news.enabled else None
+        if ev is not None:
+            reason = f"news blackout: {ev[1]} at {ev[0]:%H:%M} UTC"
+            self._log("skip", group=group, reason=reason)
+            self.decisions.append({"time": now, "group": group, "side": "", "stage": "news",
+                                   "approved": False, "reason": reason})
             return
         approved = []
         for s in legs:

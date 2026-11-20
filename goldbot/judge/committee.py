@@ -53,9 +53,9 @@ AGENTS = {
     ),
     "risk_officer": COMMON + (
         " Your angle: account risk. You see the account's position against its funded-account "
-        "rules (daily loss limit, first-week loss limit, weekly profit target). The hard limits "
+        "rules (daily loss limit, static loss floor, maximum exposure, profit target). The hard limits "
         "are already enforced; judge whether taking this trade now is prudent given how close "
-        "the account is to a limit or to the weekly target, and recent losses."
+        "the account is to a limit or to the profit target, and recent losses."
     ),
 }
 

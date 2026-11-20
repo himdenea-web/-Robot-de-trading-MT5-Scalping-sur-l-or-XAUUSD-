@@ -16,7 +16,9 @@ def setup(entry=2000.0, sl=1995.0, d=1):
 
 
 def rm(**kw):
-    return FundedRiskManager(RiskConfig(**kw))
+    """Old-style limits only (daily, per trade) unless a test switches the new ones on."""
+    base = {"risk_per_trade_usd": 90, "max_total_loss": 0, "profit_target": 0, "max_open_risk": 0}
+    return FundedRiskManager(RiskConfig(**{**base, **kw}))
 
 
 def test_size_rounds_down_to_risk():
@@ -33,23 +35,65 @@ def test_rejects_when_stop_too_wide_for_min_lot():
 
 def test_daily_limit_counts_open_risk_and_buffer():
     r = rm(risk_per_trade_usd=90, daily_loss_limit=200, loss_buffer_usd=15)
-    assert r.check(setup(), AccountState(day_realized=-90)).ok             # -90-90-15 = -195
-    v = r.check(setup(), AccountState(day_realized=-90, open_risk=10))     # -205
+    v = r.check(setup(), AccountState(day_realized=-90))                   # room 95 >= 90
+    assert v.ok and v.planned_risk == pytest.approx(90)
+    v = r.check(setup(), AccountState(day_realized=-90, open_risk=10))     # room 85: size reduced
+    assert v.ok and v.planned_risk <= 85 and "daily" in v.reason
+    v = r.check(setup(), AccountState(day_realized=-160))                  # room 25 >= min 20
+    assert v.ok and v.planned_risk <= 25
+    v = r.check(setup(), AccountState(day_realized=-170))                  # room 15 < min 20
     assert not v.ok and "daily" in v.reason
-    assert not r.check(setup(), AccountState(open_risk=100)).ok            # -205 worst case
 
 
 def test_profit_today_gives_room():
     r = rm(risk_per_trade_usd=90, daily_loss_limit=200, loss_buffer_usd=15)
-    assert r.check(setup(), AccountState(day_realized=+50, open_risk=140)).ok   # 50-140-90-15 = -195
-    assert not r.check(setup(), AccountState(day_realized=0, open_risk=140)).ok  # -245
+    v = r.check(setup(), AccountState(day_realized=+50, open_risk=140))    # room 95
+    assert v.ok and v.planned_risk == pytest.approx(90)
+    v = r.check(setup(), AccountState(day_realized=0, open_risk=140))      # room 45
+    assert v.ok and v.planned_risk <= 45
+
+
+def test_static_floor_shrinks_then_blocks():
+    r = rm(risk_per_trade_usd=50, start_balance=5000, max_total_loss=400, loss_buffer_usd=15)
+    assert r.check(setup(), AccountState(balance=5000)).planned_risk == pytest.approx(50)
+    v = r.check(setup(), AccountState(balance=4650))                        # room 35
+    assert v.ok and v.planned_risk <= 35 and "floor" in v.reason
+    v = r.check(setup(), AccountState(balance=4630))                        # room 15
+    assert not v.ok and "floor" in v.reason
+    v = r.check(setup(), AccountState(balance=4700, open_risk=50))          # room 35
+    assert v.ok and v.planned_risk <= 35
+
+
+def test_max_open_risk():
+    r = rm(risk_per_trade_usd=90, max_open_risk=150)
+    v = r.check(setup(), AccountState(open_risk=90))                        # 60 left
+    assert v.ok and v.planned_risk <= 60 and "exposure" in v.reason
+    v = r.check(setup(), AccountState(open_risk=140))
+    assert not v.ok and "exposure" in v.reason
+
+
+def test_profit_target_stops_trading():
+    r = rm(start_balance=5000, profit_target=400)
+    assert r.check(setup(), AccountState(balance=5399)).ok
+    v = r.check(setup(), AccountState(balance=5400))
+    assert not v.ok and "profit target" in v.reason
+
+
+def test_default_rules_are_the_5k_two_phase_account():
+    c = RiskConfig()
+    assert (c.start_balance, c.max_total_loss, c.profit_target, c.daily_loss_limit, c.max_open_risk) == \
+        (5000, 400, 400, 200, 150)
+    assert c.weekly_profit_target == 0 and c.first_week_loss_limit == 0
 
 
 def test_first_week_limit():
     r = rm(risk_per_trade_usd=90, first_week_loss_limit=400, loss_buffer_usd=15)
-    st = AccountState(since_start_realized=-300, in_first_week=True)
+    st = AccountState(since_start_realized=-300, in_first_week=True)   # room 85
     v = r.check(setup(), st)
-    assert not v.ok and "first-week" in v.reason
+    assert v.ok and v.planned_risk <= 85 and "first-week" in v.reason
+    st.since_start_realized = -370                                       # room 15
+    assert not r.check(setup(), st).ok
+    st.since_start_realized = -300
     st.in_first_week = False
     assert r.check(setup(), st).ok
 

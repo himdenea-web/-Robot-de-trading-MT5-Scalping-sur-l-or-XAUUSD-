@@ -52,8 +52,12 @@ def main():
         f"server offset {conn.offset_s / 3600:+.1f}h | mode {cfg.mode.upper()}")
     log(f"strategy {strategy.describe()}")
     r = cfg.risk
-    log(f"risk {r.risk_per_trade_usd}/trade | daily limit {r.daily_loss_limit} | first week "
-        f"{r.first_week_loss_limit} (start {r.account_start}) | weekly target {r.weekly_profit_target}")
+    log(f"risk {r.risk_per_trade_usd}/trade | daily limit {r.daily_loss_limit} | floor "
+        f"{r.start_balance - r.max_total_loss if r.max_total_loss else 'off'} | target "
+        f"{r.start_balance + r.profit_target if r.profit_target else 'off'} | max open risk "
+        f"{r.max_open_risk or 'off'} | news {cfg.news.source}")
+    if acc["balance"] < r.start_balance - r.max_total_loss + r.min_risk_usd and r.max_total_loss:
+        log("WARNING: balance is at or near the floor; check GB_START_BALANCE")
     log(f"committee {'ON via ' + committee.provider.describe() if committee else 'OFF'}"
         + (f" | fail mode {cfg.judge.fail_mode}" if committee else ""))
     st = engine.account_state(market.now())
