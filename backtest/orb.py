@@ -35,6 +35,8 @@ class OrbParams:
     trend_filter: bool = False  # trade only in the direction of D1 close vs D1 EMA20 (prior day)
     min_range_atr: float = 0.0  # skip if range < k * D1 ATR(14)
     max_range_atr: float = 9.9  # skip if range > k * D1 ATR(14)
+    stop_frac: float = 0.0      # >0: stop at this fraction of the range behind the entry (1 = range, 0.5 = mid)
+    trend_span: int = 20        # EMA span of the daily trend filter
 
 
 class M1:
@@ -50,6 +52,8 @@ class M1:
             "trend": np.sign(d1.close - d1.close.ewm(span=20, adjust=False).mean()).shift(1),
             "atr": tr.ewm(alpha=1 / 14, adjust=False).mean().shift(1),
         })
+        for span in (5, 10, 20, 50, 100):
+            self.d1[f"trend_{span}"] = np.sign(d1.close - d1.close.ewm(span=span, adjust=False).mean()).shift(1)
         self.d1.index = self.d1.index.date
         self._tables = {}
 
@@ -108,14 +112,18 @@ def run_orb(m: M1, p: OrbParams, spread=0.30, slip=0.10):
         else:
             d = 1 if ku < kd else -1
         j = a + (ku if d > 0 else kd)
-        if p.trend_filter and d != r.trend:
+        if p.trend_filter and d != getattr(r, f"trend_{p.trend_span}", r.trend):
             continue
         if d > 0:
             entry = max(r.hi, o[j] + spread) + slip
             sl = r.lo if p.stop == "range" else (r.hi + r.lo) / 2
+            if p.stop_frac > 0:
+                sl = r.hi - p.stop_frac * width
         else:
             entry = min(r.lo, o[j]) - slip
             sl = (r.hi + spread) if p.stop == "range" else (r.hi + r.lo) / 2 + spread
+            if p.stop_frac > 0:
+                sl = r.lo + p.stop_frac * width + spread
         risk = (entry - sl) * d
         if risk <= 0:
             continue
