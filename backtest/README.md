@@ -24,3 +24,10 @@ Framework backtest (the real `goldbot` engine with funded-account rules):
 - `orb.py`: opening range breakout research engine used to choose the strategy settings.
 - `llm_replay.py`: evaluates the LLM committee on a sample of historical setups with your
   provider and key (billed; answers are cached).
+
+Strategy search (7,488 variants with luck controls):
+
+- `search.py`: 76 entry rules from 38 families x session windows x trend filter x 18 exits,
+  numba simulator on 1-minute exits, random-direction and no-cost controls, Reality Check / SPA,
+  weekly funded-challenge simulator.
+- `strategy_search.ipynb` (built by `build_search_notebook.py`): results and charts. Runs in about 2 minutes.
