@@ -25,6 +25,7 @@ class Engine:
         self.alerts: list[dict] = []          # alert mode: what would have been placed
         self.decisions: list[dict] = []
         self._known_positions: set[str] = set()
+        self._paused: list = []               # (order, resume_at, paused_at) held during news
         self.news = news if news is not None else NewsCalendar(cfg.news, log=lambda m: self._log("news", msg=m))
 
     # ------------------------------------------------------------------ helpers
@@ -47,8 +48,11 @@ class Engine:
         start = r.account_start
         lookback_start = pd.Timestamp(min(week, start) if start else week) - pd.Timedelta(days=2)
         st = AccountState()
+        days_traded = set()
         for t, pnl in self.broker.realized_since(lookback_start):
             d = self._day(t)
+            if start and d >= start:
+                days_traded.add(d)
             if d == today:
                 st.day_realized += pnl
             if trading_week(d) == week:
@@ -58,13 +62,18 @@ class Engine:
         st.in_first_week = bool(start) and start <= today < (pd.Timestamp(start) + pd.Timedelta(days=7)).date()
         positions, pending = self.broker.positions(), self.broker.pending()
         groups_pending = {}
-        for o in pending:
+        for o in list(pending) + [p[0] for p in self._paused]:
             groups_pending[o.setup.group] = max(groups_pending.get(o.setup.group, 0), o.planned_risk)
         ext_risk, ext_naked = self.broker.external_risk()
         st.open_risk = sum(p.planned_risk for p in positions) + sum(groups_pending.values()) + ext_risk
         st.external_unprotected = ext_naked
         # a pending OCO group reserves one trade slot; a filled group uses one
-        st.trades_today = len(self._groups_entered_on(today, lookback_start) | set(groups_pending))
+        entered_today = self._groups_entered_on(today, lookback_start)
+        st.trades_today = len(entered_today | set(groups_pending))
+        if start:
+            if entered_today:
+                days_traded.add(today)
+            st.trading_days = len(days_traded)
         acc = self.broker.account()
         st.equity = acc.get("equity", 0.0)
         st.balance = acc.get("balance")
@@ -114,8 +123,43 @@ class Engine:
             kept.append(p)
         return kept
 
+    def _pause_for_news(self, now):
+        """Some firms count trades *placed* around a release at 40%: hold waiting orders
+        through the window and re-place them afterwards if price has not run past them."""
+        if not (self.news.enabled and self.cfg.news.pause_pending):
+            return
+        ev = self.news.blackout(now + pd.Timedelta(minutes=1))
+        if ev is not None:
+            resume = ev[0] + pd.Timedelta(minutes=self.cfg.news.after_min)
+            for o in self.broker.pending():
+                if self.broker.cancel(o):
+                    self._paused.append((o, resume, now))
+                    self._log("cancel", group=o.setup.group, side=o.setup.side,
+                              reason=f"paused for {ev[1]}")
+        for item in list(self._paused):
+            o, resume, paused_at = item
+            if now < resume or self.news.blackout(now) is not None:
+                continue
+            self._paused.remove(item)
+            s = o.setup
+            if now >= s.expires:
+                continue
+            hi, lo, n = self.market.hilo(paused_at, now)
+            sp = self.market.spread()
+            crossed = n and ((s.direction > 0 and hi + sp >= s.entry) or (s.direction < 0 and lo <= s.entry))
+            void = s.invalidate is not None and n and (
+                (s.direction > 0 and lo <= s.invalidate) or (s.direction < 0 and hi + sp >= s.invalidate))
+            if crossed or void:
+                self._log("skip", group=s.group, side=s.side,
+                          reason="level crossed during the news pause" if crossed else "invalidated during the news pause")
+                continue
+            if self.broker.place(s, o.lots, o.planned_risk):
+                self._log("order", group=s.group, side=s.side, price=s.entry, sl=s.sl, tp=s.tp,
+                          lots=o.lots, risk=o.planned_risk, reason="re-placed after news")
+
     def _manage(self, now):
         self.news.refresh()
+        self._pause_for_news(now)
         positions = self.broker.positions()
         for p in positions:
             if p.id not in self._known_positions:
@@ -196,7 +240,7 @@ class Engine:
                 self._notify("ALERT (not placed): " + msg)
             else:
                 o = self.broker.place(s, v.lots, v.planned_risk)
+                why = "" if o else getattr(self.broker, "last_error", "")
                 self._log("order" if o else "order_refused", group=group, side=s.side, price=s.entry,
-                          sl=s.sl, tp=s.tp, lots=v.lots, risk=v.planned_risk)
-                if o:
-                    self._notify("ORDER placed: " + msg)
+                          sl=s.sl, tp=s.tp, lots=v.lots, risk=v.planned_risk, reason=why)
+                self._notify(("ORDER placed: " if o else f"ORDER REFUSED ({why}): ") + msg)

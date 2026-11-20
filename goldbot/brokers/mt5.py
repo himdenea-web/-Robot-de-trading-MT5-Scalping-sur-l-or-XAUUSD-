@@ -4,12 +4,18 @@ Times: MT5 returns bar and deal times as *server* time expressed as epoch second
 measures the server offset from the latest tick and converts everything to UTC, so the rest
 of the framework only ever sees UTC.
 
-Safety:
+Safety and unattended operation:
   * refuses to run on a real account when require_demo is set
   * only touches orders and positions carrying this bot's magic number
-  * on start, cancels this bot's leftover pending orders (their context is gone)
+  * can start and log in the terminal itself (path, login, password, server), and
+    reconnects when the terminal or its link to the server drops
+  * on start, adopts its own leftover orders and positions using the state file (so time
+    exits, expiries and planned risk survive a restart) and rebuilds recent closed trades
+    from the deal history (so the daily trade count survives too); orders it cannot explain
+    are cancelled, positions it cannot explain get a conservative time exit
   * a stop order whose level is already crossed is sent as a market order only if price is
     still within `max_chase` of the level; otherwise the setup is skipped
+  * before sending, the order's margin is checked against free margin
 """
 import time
 
@@ -17,6 +23,7 @@ import numpy as np
 import pandas as pd
 
 from goldbot.models import Fill, Order, Position, Setup
+from goldbot.state import StateStore
 
 try:
     import MetaTrader5 as mt5
@@ -28,15 +35,17 @@ class MT5Error(RuntimeError):
     pass
 
 
-def apply_symbol_specs(risk_cfg, info) -> dict:
+def apply_symbol_specs(risk_cfg, info, margin_per_lot: float | None = None, price: float | None = None) -> dict:
     """Use the broker's real contract specification for sizing (ounces per lot, lot min,
-    step, max) instead of the config defaults. XAUUSD is often 100 oz per lot but some
-    brokers use 10 or 1; sizing with the wrong value would multiply the risk.
+    step, max, effective leverage) instead of the config defaults. XAUUSD is often 100 oz
+    per lot but some brokers use 10 or 1; sizing with the wrong value would multiply the risk.
     Returns what changed."""
     specs = {"contract_size": float(info.trade_contract_size), "volume_min": float(info.volume_min),
              "volume_step": float(info.volume_step)}
     if not all(v > 0 for v in specs.values()):
         raise MT5Error(f"invalid contract specification from the broker: {specs}")
+    if margin_per_lot and price:
+        specs["leverage"] = round(price * specs["contract_size"] / margin_per_lot, 2)
     changed = {k: (getattr(risk_cfg, k), v) for k, v in specs.items() if getattr(risk_cfg, k) != v}
     for k, v in specs.items():
         setattr(risk_cfg, k, v)
@@ -48,22 +57,61 @@ def apply_symbol_specs(risk_cfg, info) -> dict:
 
 
 class MT5Connection:
-    def __init__(self, symbol: str, require_demo=True):
+    def __init__(self, symbol: str, require_demo=True, path="", login=0, password="", server="",
+                 log=print):
         if mt5 is None:
             raise MT5Error("MetaTrader5 package not installed (pip install MetaTrader5, Windows only)")
-        if not mt5.initialize():
+        self.base_symbol, self.require_demo = symbol, require_demo
+        self.path, self.login, self.password, self.server = path, int(login or 0), password, server
+        self.log = log
+        self.offset_s = 0
+        self._connect()
+
+    def _connect(self):
+        kw = {"timeout": 60000}
+        if self.path:
+            kw["path"] = self.path
+        if self.login:
+            kw.update(login=self.login, password=self.password, server=self.server)
+        if not mt5.initialize(**kw):
             raise MT5Error(f"cannot connect to MetaTrader 5: {mt5.last_error()}")
         acc = mt5.account_info()
         if acc is None:
             raise MT5Error("no account logged in to MetaTrader 5")
+        if self.login and acc.login != self.login:
+            raise MT5Error(f"terminal is logged in to {acc.login}, expected {self.login}")
         self.is_demo = acc.trade_mode == mt5.ACCOUNT_TRADE_MODE_DEMO
-        if require_demo and not self.is_demo:
+        if self.require_demo and not self.is_demo:
             mt5.shutdown()
             raise MT5Error("real account detected and GB_REQUIRE_DEMO is on: stopping")
-        self.symbol = self._resolve(symbol)
+        self.symbol = self._resolve(self.base_symbol)
         self.info = mt5.symbol_info(self.symbol)
-        self.offset_s = 0
         self.refresh_offset()
+
+    def healthy(self) -> tuple[bool, str]:
+        ti = mt5.terminal_info()
+        if ti is None:
+            return False, f"terminal not reachable ({mt5.last_error()})"
+        if not ti.connected:
+            return False, "terminal has no connection to the trade server"
+        if mt5.account_info() is None:
+            return False, "no account logged in"
+        return True, ""
+
+    def trading_allowed(self) -> tuple[bool, str]:
+        ti, acc = mt5.terminal_info(), mt5.account_info()
+        if ti is not None and not ti.trade_allowed:
+            return False, "Algo Trading is switched off in the MT5 terminal (toolbar button)"
+        if acc is not None and not acc.trade_expert:
+            return False, "automated trading is not allowed for this account"
+        return True, ""
+
+    def reconnect(self):
+        try:
+            mt5.shutdown()
+        except Exception:
+            pass
+        self._connect()
 
     def _resolve(self, base):
         if mt5.symbol_info(base) is not None:
@@ -74,6 +122,13 @@ class MT5Connection:
                 mt5.symbol_select(s.name, True)
                 return s.name
         raise MT5Error(f"symbol {base!r} not found at this broker")
+
+    def margin_per_lot(self):
+        tick = mt5.symbol_info_tick(self.symbol)
+        if tick is None:
+            return None, None
+        m = mt5.order_calc_margin(mt5.ORDER_TYPE_BUY, self.symbol, 1.0, tick.ask)
+        return (float(m) if m else None), float(tick.ask)
 
     def refresh_offset(self):
         """Server time offset from UTC, rounded to 30 minutes, from a fresh tick."""
@@ -97,7 +152,7 @@ class MT5Market:
         self.c = conn
 
     def now(self):
-        return pd.Timestamp.utcnow().tz_localize(None).floor("min")
+        return pd.Timestamp.now("UTC").tz_localize(None).floor("min")
 
     def hilo(self, start, end):
         rates = mt5.copy_rates_range(self.c.symbol, mt5.TIMEFRAME_M1,
@@ -136,18 +191,93 @@ class MT5Market:
         return float(tick.bid) if tick else float("nan")
 
 
+def _fallback_setup(group, direction, entry, sl, tp, t, hold_hours):
+    return Setup(strategy="adopted", group=group or f"adopted-{t:%Y%m%d%H%M}", direction=direction,
+                 entry=entry, sl=sl, tp=tp or None, created=t, expires=t,
+                 exit_by=t + pd.Timedelta(hours=hold_hours))
+
+
 class MT5Broker:
     def __init__(self, conn: MT5Connection, magic: int, count_all_account_pnl=True,
-                 deviation_points=30, max_chase=0.25):
+                 deviation_points=30, max_chase=0.25, state: StateStore | None = None,
+                 log=print, adopt_hold_hours=4.0, history_days=4):
         self.c = conn
         self.magic = magic
         self.count_all = count_all_account_pnl
         self.deviation = deviation_points
         self.max_chase = max_chase          # fraction of the stop distance
+        self.state = state or StateStore(None)
+        self.log = log
+        self.adopt_hold_hours = adopt_hold_hours
         self._orders: dict[int, Order] = {}
         self._positions: dict[int, Position] = {}
         self._fills: list[Fill] = []
-        self._cancel_leftovers()
+        self.last_error = ""
+        self._rebuild_history(history_days)
+        self._adopt_leftovers()
+
+    # ---- start-up recovery
+    def _rebuild_history(self, days):
+        """Closed bot trades of the last days, from the deal history (survives restarts)."""
+        frm = self.c.to_server_epoch(pd.Timestamp.now("UTC").tz_localize(None) - pd.Timedelta(days=days))
+        to = self.c.to_server_epoch(pd.Timestamp.now("UTC").tz_localize(None) + pd.Timedelta(days=1))
+        deals = [d for d in (mt5.history_deals_get(frm, to) or []) if d.magic == self.magic
+                 and d.symbol == self.c.symbol]
+        by_pos = {}
+        for d in deals:
+            by_pos.setdefault(d.position_id, []).append(d)
+        live = {p.ticket for p in (mt5.positions_get(symbol=self.c.symbol) or [])}
+        for pid, ds in by_pos.items():
+            ins = [d for d in ds if d.entry == mt5.DEAL_ENTRY_IN]
+            outs = [d for d in ds if d.entry in (mt5.DEAL_ENTRY_OUT, mt5.DEAL_ENTRY_INOUT)]
+            if not ins or not outs or pid in live:
+                continue
+            first, last = min(ins, key=lambda d: d.time), max(outs, key=lambda d: d.time)
+            saved = self.state.get(first.order) or self.state.get(pid)
+            direction = 1 if first.type == mt5.DEAL_TYPE_BUY else -1
+            t_in = self.c.to_utc(first.time)
+            setup = saved[0] if saved else _fallback_setup(first.comment, direction, first.price,
+                                                            first.price, None, t_in, self.adopt_hold_hours)
+            risk = saved[2] if saved else 0.0
+            pnl = sum(d.profit + d.commission + d.swap + d.fee for d in ds)
+            reason = {mt5.DEAL_REASON_SL: "sl", mt5.DEAL_REASON_TP: "tp"}.get(last.reason, "other")
+            self._fills.append(Fill(position_id=str(pid), setup=setup, lots=first.volume,
+                                    entry_price=first.price, entry_time=t_in, exit_price=last.price,
+                                    exit_time=self.c.to_utc(last.time), reason=reason, pnl=pnl,
+                                    planned_risk=risk))
+        self._fills.sort(key=lambda f: f.exit_time)
+
+    def _adopt_leftovers(self):
+        now = pd.Timestamp.now("UTC").tz_localize(None)
+        for o in mt5.orders_get(symbol=self.c.symbol) or []:
+            if o.magic != self.magic:
+                continue
+            saved = self.state.get(o.ticket)
+            if saved and saved[0].expires > now:
+                self._orders[o.ticket] = Order(id=str(o.ticket), setup=saved[0], lots=saved[1],
+                                               planned_risk=saved[2])
+                self.log(f"adopted pending order {o.ticket} ({saved[0].group})")
+            else:
+                mt5.order_send({"action": mt5.TRADE_ACTION_REMOVE, "order": o.ticket})
+                self.state.forget(o.ticket)
+                self.log(f"cancelled leftover pending order {o.ticket} (no saved context)")
+        for p in mt5.positions_get(symbol=self.c.symbol) or []:
+            if p.magic != self.magic:
+                continue
+            saved = self.state.get(p.identifier) or self.state.get(p.ticket)
+            d = 1 if p.type == mt5.POSITION_TYPE_BUY else -1
+            t = self.c.to_utc(p.time)
+            if saved:
+                setup, risk = saved[0], saved[2]
+            else:
+                setup = _fallback_setup(p.comment, d, p.price_open, p.sl, p.tp, t, self.adopt_hold_hours)
+                risk = abs(p.price_open - p.sl) * p.volume * self.c.info.trade_contract_size if p.sl else 0.0
+                self.log(f"position {p.ticket} has no saved context: time exit set to {setup.exit_by} UTC")
+            self._positions[p.ticket] = Position(id=str(p.ticket), setup=setup, lots=p.volume,
+                                                 entry_price=p.price_open, entry_time=t, planned_risk=risk)
+            self.log(f"adopted open position {p.ticket} ({setup.group})")
+        keep = set(self._orders) | set(self._positions) | {p.identifier for p in (mt5.positions_get(symbol=self.c.symbol) or [])}
+        self.state.prune(keep)
 
     # ---- helpers
     def _send(self, req):
@@ -157,23 +287,34 @@ class MT5Broker:
             req["type_filling"] = m
             res = mt5.order_send(req)
             if res is not None and res.retcode != 10030:      # 10030: unsupported filling mode
-                return res
+                break
+        if res is None:
+            self.last_error = f"order_send returned nothing: {mt5.last_error()}"
+        elif res.retcode not in (mt5.TRADE_RETCODE_DONE, mt5.TRADE_RETCODE_PLACED):
+            self.last_error = f"retcode {res.retcode}: {res.comment}"
         return res
-
-    def _cancel_leftovers(self):
-        for o in mt5.orders_get(symbol=self.c.symbol) or []:
-            if o.magic == self.magic:
-                mt5.order_send({"action": mt5.TRADE_ACTION_REMOVE, "order": o.ticket})
 
     # ---- interface
     def account(self):
         a = mt5.account_info()
-        return {"equity": a.equity, "balance": a.balance, "is_demo": self.c.is_demo}
+        if a is None:
+            raise MT5Error("account_info unavailable (terminal disconnected?)")
+        return {"equity": a.equity, "balance": a.balance, "is_demo": self.c.is_demo,
+                "margin_free": a.margin_free}
 
     def place(self, setup: Setup, lots: float, planned_risk: float):
         info, tick = self.c.info, mt5.symbol_info_tick(self.c.symbol)
+        if tick is None:
+            self.last_error = "no tick"
+            return None
         digits, point = info.digits, info.point
         d = setup.direction
+        a = mt5.account_info()
+        margin = mt5.order_calc_margin(mt5.ORDER_TYPE_BUY if d > 0 else mt5.ORDER_TYPE_SELL,
+                                       self.c.symbol, lots, setup.entry)
+        if a is not None and margin and margin > a.margin_free * 0.9:
+            self.last_error = f"not enough free margin ({margin:.2f} needed, {a.margin_free:.2f} free)"
+            return None
         min_dist = (info.trade_stops_level + 2) * point
         crossed = (tick.ask >= setup.entry) if d > 0 else (tick.bid <= setup.entry)
         base = {"symbol": self.c.symbol, "volume": lots, "sl": round(setup.sl, digits),
@@ -182,12 +323,14 @@ class MT5Broker:
         if crossed:
             px = tick.ask if d > 0 else tick.bid
             if abs(px - setup.entry) > self.max_chase * setup.risk_per_unit:
-                return None                                    # too far past the level: skip
+                self.last_error = "price already too far past the entry level"
+                return None
             req = {**base, "action": mt5.TRADE_ACTION_DEAL, "price": px,
                    "type": mt5.ORDER_TYPE_BUY if d > 0 else mt5.ORDER_TYPE_SELL,
                    "type_time": mt5.ORDER_TIME_GTC}
         else:
             if abs(setup.entry - (tick.ask if d > 0 else tick.bid)) < min_dist:
+                self.last_error = "entry too close to price for a stop order"
                 return None
             req = {**base, "action": mt5.TRADE_ACTION_PENDING, "price": round(setup.entry, digits),
                    "type": mt5.ORDER_TYPE_BUY_STOP if d > 0 else mt5.ORDER_TYPE_SELL_STOP,
@@ -198,12 +341,14 @@ class MT5Broker:
             return None
         o = Order(id=str(res.order), setup=setup, lots=lots, planned_risk=planned_risk)
         self._orders[res.order] = o
+        self.state.remember(res.order, setup, lots, planned_risk)
         return o
 
     def cancel(self, order):
         ticket = int(order.id)
         res = mt5.order_send({"action": mt5.TRADE_ACTION_REMOVE, "order": ticket})
         self._orders.pop(ticket, None)
+        self.state.forget(ticket)
         return res is not None and res.retcode == mt5.TRADE_RETCODE_DONE
 
     def pending(self):
@@ -212,6 +357,7 @@ class MT5Broker:
             # gone from the server: either filled (becomes a position) or expired/removed
             if t not in live and not self._became_position(t):
                 self._orders.pop(t, None)
+                self.state.forget(t)
         return [o for t, o in self._orders.items() if t in live]
 
     def _became_position(self, ticket):
@@ -221,6 +367,8 @@ class MT5Broker:
                 self._positions[p.ticket] = Position(
                     id=str(p.ticket), setup=o.setup, lots=p.volume, entry_price=p.price_open,
                     entry_time=self.c.to_utc(p.time), planned_risk=o.planned_risk)
+                if p.ticket != ticket:
+                    self.state.remember(p.ticket, o.setup, o.lots, o.planned_risk)
                 return True
         return False
 
@@ -245,6 +393,7 @@ class MT5Broker:
                                 entry_price=pos.entry_price, entry_time=pos.entry_time,
                                 exit_price=last.price, exit_time=self.c.to_utc(last.time),
                                 reason=reason, pnl=pnl, planned_risk=pos.planned_risk))
+        self.state.forget(int(pos.id))
 
     def close(self, position, reason):
         p = next((x for x in (mt5.positions_get(ticket=int(position.id)) or [])), None)
@@ -268,8 +417,10 @@ class MT5Broker:
 
     def realized_since(self, start):
         frm = self.c.to_server_epoch(start)
-        to = self.c.to_server_epoch(pd.Timestamp.utcnow().tz_localize(None) + pd.Timedelta(days=1))
-        deals = mt5.history_deals_get(frm, to) or []
+        to = self.c.to_server_epoch(pd.Timestamp.now("UTC").tz_localize(None) + pd.Timedelta(days=1))
+        deals = mt5.history_deals_get(frm, to)
+        if deals is None:
+            raise MT5Error(f"deal history unavailable: {mt5.last_error()}")
         out = []
         for d in deals:
             if d.type not in (mt5.DEAL_TYPE_BUY, mt5.DEAL_TYPE_SELL):

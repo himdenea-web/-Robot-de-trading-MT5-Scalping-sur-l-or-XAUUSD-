@@ -32,6 +32,7 @@ class AccountState:
     external_unprotected: bool = False   # a non-bot position without a stop is open
     equity: float = 0.0
     balance: float | None = None    # account balance (None: unknown, floor and target unchecked)
+    trading_days: int | None = None # days with at least one trade since the phase start (None: unknown)
 
     def as_dict(self, rc: RiskConfig) -> dict:
         d = {
@@ -70,15 +71,29 @@ class FundedRiskManager:
     def __init__(self, cfg: RiskConfig):
         self.cfg = cfg
 
-    def size(self, setup: Setup, budget: float | None = None) -> tuple[float, float]:
-        """Lots so that hitting the stop loses at most budget (default: risk per trade), rounded down."""
+    def loss_per_lot(self, setup: Setup) -> float:
+        """USD lost per lot if the stop is hit, including the commission on both sides."""
+        c = self.cfg
+        return (setup.risk_per_unit + 2 * c.commission_rate * setup.entry) * c.contract_size
+
+    def max_lots_for_margin(self, setup: Setup, equity: float) -> float:
+        c = self.cfg
+        if not (c.leverage and equity and equity > 0):
+            return c.volume_max
+        margin_per_lot = setup.entry * c.contract_size / c.leverage
+        return c.max_margin_use * equity / margin_per_lot
+
+    def size(self, setup: Setup, budget: float | None = None, equity: float = 0.0) -> tuple[float, float]:
+        """Lots so that hitting the stop (plus commission) loses at most budget (default: risk
+        per trade), capped by margin, rounded down to the lot step."""
         c = self.cfg
         budget = c.risk_per_trade_usd if budget is None else budget
-        per_lot = setup.risk_per_unit * c.contract_size
+        per_lot = self.loss_per_lot(setup)
         if per_lot <= 0 or budget <= 0:
             return 0.0, 0.0
-        steps = math.floor(budget / per_lot / c.volume_step + 1e-9)
-        lots = round(min(steps * c.volume_step, c.volume_max), 2)
+        lots = min(budget / per_lot, c.volume_max, self.max_lots_for_margin(setup, equity))
+        steps = math.floor(lots / c.volume_step + 1e-9)
+        lots = round(steps * c.volume_step, 2)
         return lots, lots * per_lot
 
     def rooms(self, st: AccountState) -> list[tuple[str, float]]:
@@ -96,11 +111,24 @@ class FundedRiskManager:
                         - st.open_risk - c.loss_buffer_usd))
         return out
 
+    def _min_lot_trade(self, setup: Setup, st: AccountState) -> RiskVerdict:
+        """Target reached but not enough trading days: allow one minimum-lot trade today."""
+        c = self.cfg
+        risk = c.volume_min * self.loss_per_lot(setup)
+        name, budget = min(self.rooms(st), key=lambda x: x[1])
+        if risk > budget:
+            return RiskVerdict(False, f"minimum trading days: minimum lot risk {risk:.2f} > {budget:.2f} ({name})")
+        return RiskVerdict(True, f"ok, minimum lot to complete {c.min_trading_days} trading days",
+                           c.volume_min, risk)
+
     def check(self, setup: Setup, st: AccountState) -> RiskVerdict:
         c = self.cfg
         if st.external_unprotected:
             return RiskVerdict(False, "a non-bot position without a stop is open; risk unknown")
         if c.profit_target and st.balance is not None and st.balance >= c.start_balance + c.profit_target:
+            if (c.min_trading_days and st.trading_days is not None
+                    and st.trading_days < c.min_trading_days and st.trades_today == 0):
+                return self._min_lot_trade(setup, st)
             return RiskVerdict(False, f"profit target reached (balance {st.balance:.2f} >= "
                                       f"{c.start_balance + c.profit_target:.2f}); no new trades")
         if c.weekly_profit_target and st.week_realized >= c.weekly_profit_target:
@@ -112,10 +140,12 @@ class FundedRiskManager:
         if budget < c.min_risk_usd:
             return RiskVerdict(False, f"{name}: only {budget:.2f} USD of room left "
                                       f"(minimum {c.min_risk_usd})")
-        lots, risk = self.size(setup, budget)
+        lots, risk = self.size(setup, budget, st.equity)
         if lots < c.volume_min:
+            if self.max_lots_for_margin(setup, st.equity) < c.volume_min:
+                return RiskVerdict(False, "not enough margin for the minimum lot")
             return RiskVerdict(False, f"stop too wide: minimum lot would risk "
-                                      f"{c.volume_min * setup.risk_per_unit * c.contract_size:.2f} "
+                                      f"{c.volume_min * self.loss_per_lot(setup):.2f} "
                                       f"> {budget:.2f} allowed ({name})")
         reason = "ok" if name == "risk per trade" else f"ok, size reduced by the {name}"
         return RiskVerdict(True, reason, lots, risk)

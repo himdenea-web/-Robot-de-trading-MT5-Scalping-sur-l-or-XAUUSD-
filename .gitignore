@@ -4,3 +4,8 @@ __pycache__/
 .env
 goldbot_journal.csv
 .pytest_cache/
+logs/
+goldbot_state.json
+.goldbot_state_*
+STOP
+.venv/

@@ -33,7 +33,7 @@ def base_cfg(**risk):
     return Config(strategy_params=dict(sessions=("ny_comex",), range_min=60, window_min=120,
                                        stop="mid", target_r=3.0, trend_filter=True),
                   risk=RiskConfig(**{"risk_per_trade_usd": 90, "volume_max": 5.0, "max_total_loss": 0,
-                                     "profit_target": 0, **risk}))
+                                     "profit_target": 0, "commission_rate": 0.0, "leverage": 0.0, **risk}))
 
 
 def test_one_trade_per_session_and_limits_hold():
@@ -147,3 +147,46 @@ def test_env_inline_comments(tmp_path, monkeypatch):
     monkeypatch.delenv("GB_TEST_Q", raising=False)
     load_env(str(f))
     assert os.environ["GB_TEST_MODE"] == "alert" and os.environ["GB_TEST_Q"] == "a # b"
+
+
+def test_news_pause_keeps_entries_out_of_the_window():
+    from goldbot.config import NewsConfig
+    m1 = synthetic_m1(days=60)
+    cfg = base_cfg()
+    cfg.news = NewsConfig(source="fixed:10:00", pause_pending=True)
+    res = run_backtest(cfg, m1)
+    tr = res["trades"]
+    m = _ny_minutes(tr.entry_time)
+    assert not m.between(600 - 5, 600 + 5).any()
+    assert len(tr) > 5
+
+
+def test_state_store_roundtrip(tmp_path):
+    from goldbot.state import StateStore
+    from goldbot.models import Setup
+    T = pd.Timestamp("2026-11-10 14:20")
+    s = Setup("orb", "orb-ny_comex-2026-11-10", 1, 2000.0, 1995.0, 2015.0, T, T + pd.Timedelta(hours=2),
+              T + pd.Timedelta(hours=3), {"session": "ny_comex", "x": [1]}, invalidate=1990.0)
+    st = StateStore(str(tmp_path / "state.json"))
+    st.remember(123, s, 0.1, 50.0)
+    back = StateStore(str(tmp_path / "state.json")).get(123)
+    assert back[0].group == s.group and back[0].exit_by == s.exit_by and back[0].invalidate == 1990.0
+    assert back[1:] == (0.1, 50.0)
+    st.prune({999})
+    assert StateStore(str(tmp_path / "state.json")).get(123) is None
+
+
+def test_env_example_parses_with_defaults():
+    from goldbot.config import Config
+    saved = dict(os.environ)
+    try:
+        for k in list(os.environ):
+            if k.startswith("GB_") or k in ("SYMBOL", "TELEGRAM_TOKEN", "TELEGRAM_CHAT_ID"):
+                del os.environ[k]
+        cfg = Config.from_env(os.path.join(ROOT, ".env.example"))
+    finally:
+        os.environ.clear()
+        os.environ.update(saved)
+    assert cfg.mode == "alert" and cfg.risk.account_start is None and cfg.judge.model == ""
+    assert cfg.mt5_path == "" and cfg.mt5_login == 0
+    assert cfg.risk.risk_per_trade_usd == 50 and cfg.news.pause_pending and cfg.news.source == "forexfactory"

@@ -63,9 +63,11 @@ class SimMarket:
 
 
 class SimBroker:
-    def __init__(self, market: SimMarket, contract_size=100.0, slip=0.10, equity=6000.0):
+    def __init__(self, market: SimMarket, contract_size=100.0, slip=0.10, equity=6000.0,
+                 commission_rate=0.0):
         self.m = market
         self.contract = contract_size
+        self.commission_rate = commission_rate       # per side, share of the trade value
         self.slip = slip
         self.balance = equity
         self._ids = itertools.count(1)
@@ -162,6 +164,7 @@ class SimBroker:
     def _exit(self, p: Position, px: float, i: int, reason: str):
         self._pos.pop(p.id, None)
         pnl = (px - p.entry_price) * p.setup.direction * p.lots * self.contract
+        pnl -= self.commission_rate * (p.entry_price + px) * p.lots * self.contract
         self.balance += pnl
         f = Fill(position_id=p.id, setup=p.setup, lots=p.lots, entry_price=p.entry_price,
                  entry_time=p.entry_time, exit_price=px, exit_time=pd.Timestamp(self.m.t[max(i, 0)]),

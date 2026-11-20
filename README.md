@@ -83,6 +83,9 @@ Ce projet est fourni à des fins d'apprentissage. Les performances passées ne p
 - **Mode alerte** (par défaut) : le robot envoie le setup sur Telegram sans passer d'ordre. **Mode trade** : il place les ordres.
 - **Comité IA multi-agents (optionnel)** : 3 analystes (tendance, volatilité, risque) + un président, tous sur **un seul fournisseur** choisi dans la config (`GB_LLM_PROVIDER` + `GB_LLM_API_KEY` + `GB_LLM_MODEL`) : `anthropic`, `openai`, ou `openai_compatible` (OpenRouter, Groq, Ollama...). Le comité peut seulement refuser un setup, jamais en créer ou modifier un.
 
+- **Fonctionnement 24/7** (VPS Windows ou PC portable allumé) : connexion automatique au terminal MT5, reconnexion, reprise des ordres et positions après un redémarrage, surveillance (watchdog) et tâche planifiée Windows, alertes Telegram et statut quotidien. Voir `deploy/README.md`.
+- **Coûts FundedNext Stellar Lite** inclus : commission 0,0018 % par côté sur les métaux, levier réel lu chez le courtier, plafond de marge.
+
 ```bash
 copy .env.example .env          # puis remplir
 python -m goldbot --check       # connexion, réglages, état du compte

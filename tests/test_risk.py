@@ -17,7 +17,8 @@ def setup(entry=2000.0, sl=1995.0, d=1):
 
 def rm(**kw):
     """Old-style limits only (daily, per trade) unless a test switches the new ones on."""
-    base = {"risk_per_trade_usd": 90, "max_total_loss": 0, "profit_target": 0, "max_open_risk": 0}
+    base = {"risk_per_trade_usd": 90, "max_total_loss": 0, "profit_target": 0, "max_open_risk": 0,
+            "commission_rate": 0.0, "leverage": 0.0}
     return FundedRiskManager(RiskConfig(**{**base, **kw}))
 
 
@@ -126,12 +127,42 @@ def test_session_open_follows_daylight_saving():
 def test_broker_contract_specs_drive_sizing():
     from types import SimpleNamespace
     from goldbot.brokers.mt5 import apply_symbol_specs
-    c = RiskConfig(risk_per_trade_usd=50, volume_max=1.0)
+    c = RiskConfig(risk_per_trade_usd=50, volume_max=1.0, commission_rate=0.0, leverage=0.0)
     info = SimpleNamespace(trade_contract_size=10.0, volume_min=0.01, volume_step=0.01, volume_max=50.0)
     changed = apply_symbol_specs(c, info)
     assert c.contract_size == 10.0 and "contract_size" in changed and c.volume_max == 1.0
     lots, risk = FundedRiskManager(c).size(setup(sl=1995.0))     # $5 stop x 10 oz = $50 per lot
     assert lots == 1.0 and risk == pytest.approx(50.0)
-    c100 = RiskConfig(risk_per_trade_usd=50)
+    c100 = RiskConfig(risk_per_trade_usd=50, commission_rate=0.0, leverage=0.0)
     apply_symbol_specs(c100, SimpleNamespace(trade_contract_size=100.0, volume_min=0.01, volume_step=0.01, volume_max=0.5))
     assert FundedRiskManager(c100).size(setup(sl=1995.0)) == (0.1, pytest.approx(50.0)) and c100.volume_max == 0.5
+
+
+def test_commission_is_part_of_the_planned_loss():
+    # $5 stop at 2000: 500 per lot + commission 2 x 0.0018% x 2000 x 100 = 7.2 per lot
+    r = rm(risk_per_trade_usd=50, commission_rate=0.000018)
+    assert r.loss_per_lot(setup(sl=1995.0)) == pytest.approx(507.2)
+    lots, risk = r.size(setup(sl=1995.0))
+    assert lots == 0.09 and risk <= 50
+
+
+def test_margin_caps_the_lot_size():
+    # 1:15 on 2000 x 100 oz = 13,333 margin per lot; half of 5,000 equity allows 0.18 lots
+    r = rm(risk_per_trade_usd=150, max_open_risk=150, leverage=15.0, max_margin_use=0.5)
+    lots, _ = r.size(setup(sl=1999.0), equity=5000.0)          # $1 stop would want 1.5 lots
+    assert lots == 0.18
+    v = r.check(setup(sl=1999.0), AccountState(equity=5000.0))
+    assert v.ok and v.lots == 0.18
+    v = r.check(setup(sl=1999.0), AccountState(equity=50.0))
+    assert not v.ok and "margin" in v.reason
+
+
+def test_min_trading_days_allows_one_min_lot_trade_after_target():
+    r = rm(start_balance=5000, profit_target=200, min_trading_days=2, commission_rate=0.0)
+    st = AccountState(balance=5250, trading_days=1, trades_today=0)
+    v = r.check(setup(), st)
+    assert v.ok and v.lots == 0.01 and "trading days" in v.reason
+    st.trading_days = 2
+    assert not r.check(setup(), st).ok
+    st.trading_days, st.trades_today = 1, 1
+    assert not r.check(setup(), st).ok

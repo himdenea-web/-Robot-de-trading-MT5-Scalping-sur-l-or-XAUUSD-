@@ -3,6 +3,7 @@
 Every value has a safe default: alert-only mode, demo account required, LLM committee off.
 """
 import os
+import re
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
@@ -20,7 +21,7 @@ def load_env(path=".env"):
             k, v = line.split("=", 1)
             v = v.strip()
             if not v.startswith(("'", '"')):
-                v = v.split(" #", 1)[0].split("	#", 1)[0].strip()   # inline comment
+                v = "" if v.startswith("#") else re.split(r"\s#", v, maxsplit=1)[0].strip()   # inline comment
             os.environ.setdefault(k.strip(), v.strip('"').strip("'"))
 
 
@@ -46,11 +47,15 @@ class RiskConfig:
     profit_target: float = 400.0          # stop opening trades at start_balance + target (phase 1: 400, phase 2: 200)
     max_open_risk: float = 150.0          # combined loss at the stops of all open and pending trades
     min_risk_usd: float = 20.0            # skip the trade when less room than this is left
+    min_trading_days: int = 2             # per phase; needs account_start (the phase start date)
     first_week_loss_limit: float = 0.0    # optional: max loss during the first week
     weekly_profit_target: float = 0.0     # optional: stop opening trades once the week reaches this
     loss_buffer_usd: float = 15.0         # safety margin for slippage and gaps
     account_start: date | None = None     # first day of the account (first-week rule)
-    contract_size: float = 100.0          # oz per lot on XAUUSD
+    contract_size: float = 100.0          # oz per lot on XAUUSD (replaced by the broker's value live)
+    commission_rate: float = 0.000018     # per side, share of the trade value (FundedNext Stellar Lite metals: 0.0018%)
+    leverage: float = 15.0                # metals leverage (Stellar Lite: 1:25 challenge, 1:15 funded)
+    max_margin_use: float = 0.5           # never use more than this share of equity as margin
     volume_min: float = 0.01
     volume_step: float = 0.01
     volume_max: float = 1.0
@@ -71,6 +76,7 @@ class NewsConfig:
     after_min: float = 5.0                # and ends this long after it
     close_winners: bool = False           # close positions in profit before the window (backtest: cuts 3R winners, worse than the 40% haircut)
     rule_window_min: float = 5.0          # the firm's window: closing inside it does not help
+    pause_pending: bool = True            # cancel waiting orders before a release, re-place them after (backtest: about free)
     refresh_hours: float = 6.0
 
 
@@ -104,6 +110,15 @@ class Config:
     telegram_chat_id: str = ""
     journal_path: str = "goldbot_journal.csv"
     poll_seconds: float = 2.0
+    # unattended operation (VPS or always-on laptop)
+    mt5_path: str = ""                    # terminal64.exe; empty = the terminal already running
+    mt5_login: int = 0                    # with password and server, the bot logs the terminal in
+    mt5_password: str = ""
+    mt5_server: str = ""
+    state_file: str = "goldbot_state.json"
+    log_file: str = "logs/goldbot.log"
+    lock_port: int = 47653                # local port used to refuse a second running copy
+    heartbeat_ny: str = "17:05"           # daily Telegram status (New York time), empty = off
 
     @classmethod
     def from_env(cls, env_file=".env"):
@@ -118,11 +133,15 @@ class Config:
             profit_target=_get("GB_PROFIT_TARGET", 400.0, float),
             max_open_risk=_get("GB_MAX_OPEN_RISK", 150.0, float),
             min_risk_usd=_get("GB_MIN_RISK", 20.0, float),
+            min_trading_days=_get("GB_MIN_TRADING_DAYS", 2, int),
             first_week_loss_limit=_get("GB_FIRST_WEEK_LOSS_LIMIT", 0.0, float),
             weekly_profit_target=_get("GB_WEEKLY_PROFIT_TARGET", 0.0, float),
             loss_buffer_usd=_get("GB_LOSS_BUFFER", 15.0, float),
             account_start=date.fromisoformat(start) if start else None,
             volume_max=_get("GB_MAX_LOTS", 1.0, float),
+            commission_rate=_get("GB_COMMISSION_RATE", 0.000018, float),
+            leverage=_get("GB_LEVERAGE", 15.0, float),
+            max_margin_use=_get("GB_MAX_MARGIN_USE", 0.5, float),
             count_all_account_pnl=_get("GB_COUNT_ALL_ACCOUNT_PNL", True, bool),
         )
         judge = JudgeConfig(
@@ -143,6 +162,7 @@ class Config:
             before_min=_get("GB_NEWS_BEFORE_MIN", 6.0, float),
             after_min=_get("GB_NEWS_AFTER_MIN", 5.0, float),
             close_winners=_get("GB_NEWS_CLOSE_WINNERS", False, bool),
+            pause_pending=_get("GB_NEWS_PAUSE_PENDING", True, bool),
         )
         sessions = _get("GB_ORB_SESSIONS", "ny_comex")
         params = {
@@ -166,6 +186,14 @@ class Config:
             telegram_token=_get("TELEGRAM_TOKEN", ""),
             telegram_chat_id=_get("TELEGRAM_CHAT_ID", ""),
             journal_path=_get("GB_JOURNAL", "goldbot_journal.csv"),
+            mt5_path=_get("GB_MT5_PATH", ""),
+            mt5_login=_get("GB_MT5_LOGIN", 0, int),
+            mt5_password=_get("GB_MT5_PASSWORD", ""),
+            mt5_server=_get("GB_MT5_SERVER", ""),
+            state_file=_get("GB_STATE_FILE", "goldbot_state.json"),
+            log_file=_get("GB_LOG_FILE", "logs/goldbot.log"),
+            lock_port=_get("GB_LOCK_PORT", 47653, int),
+            heartbeat_ny=_get("GB_HEARTBEAT_NY", "17:05"),
         )
         cfg.validate()
         return cfg

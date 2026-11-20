@@ -17,7 +17,7 @@ from goldbot.market import trading_day, trading_week
 from goldbot.strategies import make_strategy
 
 
-def run_backtest(cfg, m1: pd.DataFrame, spread=0.30, slip=0.10, start_equity=None,
+def run_backtest(cfg, m1: pd.DataFrame, spread=0.30, slip=0.10, start_equity=None, commission_rate=None,
                  committee=None, start=None, end=None, progress=False):
     cfg = copy.deepcopy(cfg)
     cfg.mode = "trade"                     # the simulated broker must receive orders
@@ -32,7 +32,10 @@ def run_backtest(cfg, m1: pd.DataFrame, spread=0.30, slip=0.10, start_equity=Non
         start_equity = cfg.risk.start_balance
     if cfg.news.source in ("forexfactory", "file"):
         cfg.news.source = "off"            # no historical calendar; use fixed:HH:MM to test the rule
-    broker = SimBroker(market, contract_size=cfg.risk.contract_size, slip=slip, equity=start_equity)
+    if commission_rate is None:
+        commission_rate = cfg.risk.commission_rate
+    broker = SimBroker(market, contract_size=cfg.risk.contract_size, slip=slip, equity=start_equity,
+                       commission_rate=commission_rate)
     strategy = make_strategy(cfg.strategy, **cfg.strategy_params)
     engine = Engine(cfg, strategy, market, broker, committee=committee)
     step = max(1, (i1 - i0) // 20)
