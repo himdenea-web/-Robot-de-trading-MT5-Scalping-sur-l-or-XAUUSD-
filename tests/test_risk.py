@@ -121,3 +121,17 @@ def test_trading_day_rolls_at_17_new_york():
 def test_session_open_follows_daylight_saving():
     assert local_to_utc(date(2026, 1, 15), pd.Timestamp("08:20").time(), "America/New_York") == pd.Timestamp("2026-01-15 13:20")
     assert local_to_utc(date(2026, 7, 15), pd.Timestamp("08:20").time(), "America/New_York") == pd.Timestamp("2026-07-15 12:20")
+
+
+def test_broker_contract_specs_drive_sizing():
+    from types import SimpleNamespace
+    from goldbot.brokers.mt5 import apply_symbol_specs
+    c = RiskConfig(risk_per_trade_usd=50, volume_max=1.0)
+    info = SimpleNamespace(trade_contract_size=10.0, volume_min=0.01, volume_step=0.01, volume_max=50.0)
+    changed = apply_symbol_specs(c, info)
+    assert c.contract_size == 10.0 and "contract_size" in changed and c.volume_max == 1.0
+    lots, risk = FundedRiskManager(c).size(setup(sl=1995.0))     # $5 stop x 10 oz = $50 per lot
+    assert lots == 1.0 and risk == pytest.approx(50.0)
+    c100 = RiskConfig(risk_per_trade_usd=50)
+    apply_symbol_specs(c100, SimpleNamespace(trade_contract_size=100.0, volume_min=0.01, volume_step=0.01, volume_max=0.5))
+    assert FundedRiskManager(c100).size(setup(sl=1995.0)) == (0.1, pytest.approx(50.0)) and c100.volume_max == 0.5

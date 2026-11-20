@@ -28,6 +28,25 @@ class MT5Error(RuntimeError):
     pass
 
 
+def apply_symbol_specs(risk_cfg, info) -> dict:
+    """Use the broker's real contract specification for sizing (ounces per lot, lot min,
+    step, max) instead of the config defaults. XAUUSD is often 100 oz per lot but some
+    brokers use 10 or 1; sizing with the wrong value would multiply the risk.
+    Returns what changed."""
+    specs = {"contract_size": float(info.trade_contract_size), "volume_min": float(info.volume_min),
+             "volume_step": float(info.volume_step)}
+    if not all(v > 0 for v in specs.values()):
+        raise MT5Error(f"invalid contract specification from the broker: {specs}")
+    changed = {k: (getattr(risk_cfg, k), v) for k, v in specs.items() if getattr(risk_cfg, k) != v}
+    for k, v in specs.items():
+        setattr(risk_cfg, k, v)
+    vmax = float(info.volume_max)
+    if vmax > 0 and vmax < risk_cfg.volume_max:
+        changed["volume_max"] = (risk_cfg.volume_max, vmax)
+        risk_cfg.volume_max = vmax
+    return changed
+
+
 class MT5Connection:
     def __init__(self, symbol: str, require_demo=True):
         if mt5 is None:

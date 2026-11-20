@@ -36,8 +36,13 @@ def main():
         cfg.judge.enabled = a.llm == "on"
     cfg.validate()
 
-    from goldbot.brokers.mt5 import MT5Broker, MT5Connection, MT5Market
+    from goldbot.brokers.mt5 import MT5Broker, MT5Connection, MT5Market, apply_symbol_specs
     conn = MT5Connection(cfg.symbol, require_demo=cfg.require_demo)
+    changed = apply_symbol_specs(cfg.risk, conn.info)
+    i = conn.info
+    log(f"{conn.symbol} contract: {i.trade_contract_size:g} oz per lot, lots {i.volume_min:g} to "
+        f"{i.volume_max:g} step {i.volume_step:g}"
+        + (f" | sizing updated from config: {changed}" if changed else ""))
     market, broker = MT5Market(conn), MT5Broker(conn, cfg.magic, cfg.risk.count_all_account_pnl)
     strategy = make_strategy(cfg.strategy, **cfg.strategy_params)
     committee = None
